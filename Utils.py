@@ -10,8 +10,137 @@ This File contains helper function used for the Thesis.
 """
 
 from collections import defaultdict
-from gensim import corpora
+from gensim import corpora, models
 import csv
+import itertools 
+import numpy as np
+from sklearn.metrics.pairwise import cosine_similarity
+from sklearn import linear_model
+
+
+def mate_retrieval_score(l1_vecs, l2_vecs):
+    sim_matrix = cosine_similarity(l1_vecs, l2_vecs)
+    mate_scores = np.diagonal(sim_matrix)
+    
+    ranks = []
+    for k in range(len(mate_scores)):
+        mate_score = mate_scores[k]
+        mate_rank = np.sum(sim_matrix[k] >= mate_score)
+        ranks.append(mate_rank)
+    mates_retrieved = ranks.count(1)
+    retrieval_score = mates_retrieved/len(mate_scores)
+    return retrieval_score
+
+
+class LCA_Model:
+    def __init__(self, l1_docs, l2_docs, l1_lsi_model, l2_lsi_model):
+        self.l1_lsi_model = l1_lsi_model
+        self.l2_lsi_model = l2_lsi_model
+        self.train_model(l1_docs, l2_docs, l1_lsi_model, l2_lsi_model)
+        
+    def train_model(self, l1_docs, l2_docs, l1_lsi_model, l2_lsi_model):
+        l1_lsi_vecs = l1_lsi_model.create_embeddings(l1_docs)
+        l2_lsi_vecs = l2_lsi_model.create_embeddings(l2_docs)
+        l1_to_l2_clf = linear_model.LinearRegression()
+        l2_to_l1_clf = linear_model.LinearRegression()
+        l1_to_l2_clf.fit(l1_lsi_vecs, l2_lsi_vecs)
+        l2_to_l1_clf.fit(l2_lsi_vecs, l1_lsi_vecs)      
+        self.l1_to_l2_clf = l1_to_l2_clf
+        self.l2_to_l1_clf = l2_to_l1_clf
+        
+    def create_embeddings(self, docs, language="l1"):
+
+        if language == "l1":
+            l1_embeddings = self.l1_lsi_model.create_embeddings(docs)
+            l2_embeddings = self.l1_to_l2_clf.predict(l1_embeddings)
+        if language == "l2":
+            l2_embeddings = self.l2_lsi_model.create_embeddings(docs)
+            l1_embeddings = self.l2_to_l1_clf.predict(l2_embeddings)
+        
+        l1_embeddings = np.asarray(l1_embeddings)
+        l2_embeddings = np.asarray(l2_embeddings)
+
+        return list(np.concatenate((l1_embeddings, l2_embeddings), axis=1))
+        """
+        if src_language == trg_language:
+            if src_language == "l1":
+                return  self.l1_lsi_model.create_embeddings(docs)
+            if src_language == "l2":
+                return  self.l2_lsi_model.create_embeddings(docs)
+        else:
+            if src_language == "l1":
+                l1_embeddings = self.l1_lsi_model.create_embeddings(docs)
+                return self.l1_to_l2_clf.predict(l1_embeddings)
+            if src_language == "l2":
+                l2_embeddings = self.l2_lsi_model.create_embeddings(docs)
+                return self.l2_to_l1_clf.predict(l2_embeddings)               
+         """       
+
+
+class Vector_Lsi_Model:
+    def __init__(self, docs, dimension=50):
+        self.docs = docs
+        self.dimension = dimension
+        self.train_model(docs, dimension)
+        
+    def train_model(self, docs, dimension):
+        dictionary, corpus = create_corpus(docs)
+        tfidf_model = models.TfidfModel(corpus)
+        corpus_tfidf = tfidf_model[corpus]
+        lsi_model = models.LsiModel(corpus_tfidf, 
+                            id2word=dictionary, 
+                            num_topics=dimension)  
+        self.dictionary = dictionary
+        self.tfidf_model = tfidf_model
+        self.lsi_model = lsi_model
+    
+    def create_embeddings(self, docs):
+        vecs = []
+        for doc in docs:
+            vec_bow = self.dictionary.doc2bow(doc)
+            bow_tfidf = self.tfidf_model[vec_bow]
+            vec_lsi = self.lsi_model[bow_tfidf]  
+            vec_rep = np.asarray(list(zip(*vec_lsi))[1])
+            #This is here because of weird error, has to be fixed
+            if vec_rep.shape[0]!= self.dimension:
+                 vecs.append(np.zeros(self.dimension))
+            else:
+                vecs.append(vec_rep)
+        return vecs
+    
+    
+def train_lsi_model(french_docs, english_docs, dimension, sample_size):
+     
+    if sample_size <= len(english_docs):
+        french_docs = french_docs[:sample_size]
+        english_docs = english_docs[:sample_size]
+        
+    french_dictionary, french_corpus = create_corpus(french_docs)
+    english_dictionary, english_corpus = create_corpus(english_docs)
+
+    french_tfidf = models.TfidfModel(french_corpus)
+    french_corpus_tfidf = french_tfidf[french_corpus]
+
+    english_tfidf = models.TfidfModel(english_corpus)
+    english_corpus_tfidf = english_tfidf[english_corpus]
+
+    french_lsi_model = models.LsiModel(french_corpus_tfidf, 
+                            id2word=french_dictionary, 
+                            num_topics=dimension)  
+
+    english_lsi_model = models.LsiModel(english_corpus_tfidf, 
+                            id2word=english_dictionary, 
+                            num_topics=dimension) 
+
+    lsi_models = {"en": english_lsi_model,
+                  "en_tfidf": english_tfidf,
+                  "en_dict": english_dictionary,
+                  "fr": french_lsi_model,
+                  "fr_tfidf": french_corpus_tfidf,
+                  "fr_dict": french_dictionary,}
+
+    return lsi_models
+
 
 def extract_docs_from_jrq_xml(tree, 
                               src_language = "english",
@@ -79,6 +208,11 @@ def extract_docs_from_jrq_xml(tree,
                 
 
     return documents
+
+def dict_combinations(obj):
+  keys, values = zip(*obj.items())
+  permutations_dicts = [dict(zip(keys, v)) for v in itertools.product(*values)]
+  return permutations_dicts
 
 
 def filter_docs(l1_docs, l2_docs, min_len=1, max_len=10000):
