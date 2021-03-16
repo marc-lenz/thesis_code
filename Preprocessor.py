@@ -27,6 +27,7 @@ class Preprocessor:
             
     def preprocess(self, text):
         filtered_text = re.sub(r"[^a-zA-Z0-9]+", ' ', text.lower())
+        filtered_text = re.sub(r'[0-9]+', ' ', filtered_text)
         tokens = self.tokenize(filtered_text)
         stemmed_tokens = [self.stem_word(token) for token in tokens]
         return stemmed_tokens
