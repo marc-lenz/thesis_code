@@ -10,6 +10,7 @@ import nltk
 from nltk.tokenize import sent_tokenize, word_tokenize
 from nltk.stem import WordNetLemmatizer 
 from nltk.stem.snowball import FrenchStemmer
+nltk.download('punkt')
 
 class Preprocessor:
     def __init__(self, language = "en"):
@@ -18,7 +19,10 @@ class Preprocessor:
         
     def set_settings(self, language):
         #Language Specifics
-        if language == "en":
+        if language == "general":
+            self.tokenize = lambda x: word_tokenize(x)
+            self.stem_word = None
+        if language == "en": 
             self.tokenize = lambda x: word_tokenize(x, language="english")
             self.stem_word = WordNetLemmatizer().lemmatize
         if language == "fr":
@@ -29,9 +33,11 @@ class Preprocessor:
         filtered_text = re.sub(r"[^a-zA-Z0-9]+", ' ', text.lower())
         filtered_text = re.sub(r'[0-9]+', ' ', filtered_text)
         tokens = self.tokenize(filtered_text)
-        stemmed_tokens = [self.stem_word(token) for token in tokens]
-        return stemmed_tokens
-        
+        #Filter Tokens which are just single letters
+        tokens = [tk for tk in tokens if len(tk) > 1] 
+        if self.stem_word != None:
+          tokens = [self.stem_word(token) for token in tokens]
+        return tokens
         
     
     
