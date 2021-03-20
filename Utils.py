@@ -93,7 +93,7 @@ class LCA_Model:
   
 
 class Multi_LCA_Model:
-    def __init__(self, doc_list, lsi_models, language_labels clf_type = "nn"):
+    def __init__(self, doc_list, lsi_models, language_labels, clf_type = "nn"):
         
         self.lsi_model_dict = lsi_models
         for idxlabel in language_labels:
