@@ -17,7 +17,7 @@ import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn import linear_model
 import tensorflow as tf
-
+import pickle
 
 def mate_retrieval_score(l1_vecs, l2_vecs):
     sim_matrix = cosine_similarity(l1_vecs, l2_vecs)
@@ -90,67 +90,6 @@ class LCA_Model:
                              callbacks = [callback])          
             self.l1_to_l2_clf = l1_to_l2_clf
             self.l2_to_l1_clf = l2_to_l1_clf      
-  
-
-class Multi_LCA_Model:
-    def __init__(self, doc_list, lsi_models, language_labels, clf_type = "nn"):
-        
-        self.lsi_model_dict = lsi_models
-        for idxlabel in language_labels:
-            self.lsi_model_dict
-        self.clf_type = clf_type
-        self.train_model(l1_docs, l2_docs, l1_lsi_model, l2_lsi_model)
-        
-    def train_model(self, l1_docs, l2_docs, l1_lsi_model, l2_lsi_model):
-        l1_lsi_vecs = l1_lsi_model.create_embeddings(l1_docs)
-        l2_lsi_vecs = l2_lsi_model.create_embeddings(l2_docs)
-        #l1_to_l2_clf = linear_model.SGDRegressor(penalty = "l2")
-        #l2_to_l1_clf = linear_model.SGDRegressor(penalty = "l2")
-        
-        if self.clf_type == "linear":
-            l1_to_l2_clf = linear_model.LinearRegression()
-            l2_to_l1_clf = linear_model.LinearRegression()
-            l1_to_l2_clf.fit(l1_lsi_vecs, l2_lsi_vecs)
-            l2_to_l1_clf.fit(l2_lsi_vecs, l1_lsi_vecs)      
-            self.l1_to_l2_clf = l1_to_l2_clf
-            self.l2_to_l1_clf = l2_to_l1_clf
-            
-        if self.clf_type == "nn":
-            #Parameters for NN
-            loss_function = "MSE" #tf.keras.losses.CosineSimilarity() #"MSE"
-            optimizer_f = "adam"
-            callback = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=10)
-            dim = self.l1_lsi_model.dimension
-            
-            #First classifier         
-            l1_to_l2_clf = tf.keras.Sequential([
-                tf.keras.layers.Dense(dim, activation= None)]) # kernel_regularizer='l2'
-            
-            l1_to_l2_clf.compile(optimizer = optimizer_f,
-                          loss = loss_function,#tf.keras.losses.CosineSimilarity(),
-                          metrics=['MSE'])
-
-            l1_to_l2_clf.fit(np.asarray(l1_lsi_vecs), np.asarray(l2_lsi_vecs), 
-                             epochs=200, 
-                             validation_data = (np.asarray(l1_lsi_vecs), np.asarray(l2_lsi_vecs)),
-                             #validation_split=0.2,
-                             callbacks = [callback])
-            
-            #Second classifier
-            l2_to_l1_clf = tf.keras.Sequential([
-                tf.keras.layers.Dense(dim, activation= None)]) #, kernel_regularizer='l2'
-            
-            l2_to_l1_clf.compile(optimizer = optimizer_f,
-                          loss= loss_function, #tf.keras.losses.CosineSimilarity(),
-                          metrics=['MSE'])
-
-            l2_to_l1_clf.fit(np.asarray(l2_lsi_vecs), np.asarray(l1_lsi_vecs), 
-                             epochs=200,  
-                             validation_data = (np.asarray(l1_lsi_vecs), np.asarray(l2_lsi_vecs)),
-                             #validation_split=0.2,
-                             callbacks = [callback])          
-            self.l1_to_l2_clf = l1_to_l2_clf
-            self.l2_to_l1_clf = l2_to_l1_clf            
             
     def create_embeddings(self, docs, language="l1"):
 
@@ -170,28 +109,19 @@ class Multi_LCA_Model:
         l1_embeddings = np.asarray(l1_embeddings)
         l2_embeddings = np.asarray(l2_embeddings)
 
-        return list(np.concatenate((l1_embeddings, l2_embeddings), axis=1))
-        """
-        if src_language == trg_language:
-            if src_language == "l1":
-                return  self.l1_lsi_model.create_embeddings(docs)
-            if src_language == "l2":
-                return  self.l2_lsi_model.create_embeddings(docs)
-        else:
-            if src_language == "l1":
-                l1_embeddings = self.l1_lsi_model.create_embeddings(docs)
-                return self.l1_to_l2_clf.predict(l1_embeddings)
-            if src_language == "l2":
-                l2_embeddings = self.l2_lsi_model.create_embeddings(docs)
-                return self.l2_to_l1_clf.predict(l2_embeddings)               
-         """       
+        return list(np.concatenate((l1_embeddings, l2_embeddings), axis=1)) 
+    
+    
+    
+     
 
 
 class Vector_Lsi_Model:
-    def __init__(self, docs, dimension=50):
+    def __init__(self, docs=None, dimension=50):
         self.docs = docs
         self.dimension = dimension
-        self.train_model(docs, dimension)
+        if docs != None:
+            self.train_model(docs, dimension)
         
     def train_model(self, docs, dimension):
         dictionary, corpus = create_corpus(docs)
@@ -222,6 +152,12 @@ class Vector_Lsi_Model:
             else:
                 vecs.append(vec_rep)
         return vecs
+    
+    def save(self, filename):
+        outfile = open(filename,'wb')
+        pickle.dump(self, outfile)
+        outfile.close()
+
     
     
 def train_lsi_model(french_docs, english_docs, dimension, sample_size):
