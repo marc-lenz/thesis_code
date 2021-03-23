@@ -117,11 +117,9 @@ class LCA_Model:
 
 
 class Vector_Lsi_Model:
-    def __init__(self, docs=None, dimension=50):
+    def __init__(self, docs, dimension=50):
         self.docs = docs
         self.dimension = dimension
-        if docs != None:
-            self.train_model(docs, dimension)
         
     def train_model(self, docs, dimension):
         dictionary, corpus = create_corpus(docs)
