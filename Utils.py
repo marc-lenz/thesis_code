@@ -120,6 +120,7 @@ class Vector_Lsi_Model:
     def __init__(self, docs, dimension=50):
         self.docs = docs
         self.dimension = dimension
+        self.train_model(docs, dimension)
         
     def train_model(self, docs, dimension):
         dictionary, corpus = create_corpus(docs)
