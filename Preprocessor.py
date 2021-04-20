@@ -9,7 +9,8 @@ import re
 import nltk
 from nltk.tokenize import sent_tokenize, word_tokenize
 from nltk.stem import WordNetLemmatizer 
-from nltk.stem.snowball import FrenchStemmer
+from nltk.stem.snowball import FrenchStemmer, HungarianStemmer
+
 nltk.download('punkt')
 
 class Preprocessor:
@@ -28,6 +29,9 @@ class Preprocessor:
         if language == "fr":
             self.tokenize = lambda x: word_tokenize(x, language="french")
             self.stem_word = FrenchStemmer().stem
+        if language == "hu":
+            self.tokenize = lambda x: word_tokenize(x, language="english")
+            self.stem_word = HungarianStemmer().stem
             
     def preprocess(self, text):
         filtered_text = re.sub(r"[^a-zA-Z0-9]+", ' ', text.lower())
