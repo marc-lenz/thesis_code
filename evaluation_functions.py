@@ -12,10 +12,16 @@ from sklearn.preprocessing import normalize
 
 from functools import partial
 from itertools import combinations
-from gensim import models, matutils
+from gensim import corpora, models, matutils
 
 import matplotlib.pyplot as plt
 from matplotlib.pyplot import figure
+
+from gensim import models
+import itertools
+from thesis_code.Utils import create_corpus, read_docs, mate_retrieval_score
+
+import pickle
 
 
 
@@ -139,7 +145,7 @@ def plot_parameter_graph(dimensions, scores, title, xlabel = "Dimensions", ylabe
   plt.legend()
   plt.show()
 
-def compute_lcc_scores( en_train_matrix,
+def evaluate_lcc_model( en_train_matrix,
                 en_test_matrix,
                 fr_train_matrix,
                 fr_test_matrix,
@@ -179,4 +185,114 @@ def compute_lcc_scores( en_train_matrix,
         score = evaluation_function(english_encodings_lcc, french_encodings_lcc)
         scores.append(score)
 
+    return scores
+
+
+
+
+
+def evaluate_cllsi(fr_docs_train, fr_docs_test, en_docs_train, en_docs_test, dimensions, evaluation_function):
+
+
+  scores = []
+
+  dictionary, l1_corpus = create_corpus(fr_docs_train)
+  d1 = len(dictionary)
+  dictionary.add_documents(en_docs_train)
+
+
+  multiling_docs = []
+
+  for k in range(len(fr_docs_train)):
+      fr_doc = fr_docs_train[k]
+      en_doc = en_docs_train[k]
+      multiling_docs.append(fr_doc+en_doc)
+
+
+  bow_reps = [dictionary.doc2bow(line) for line in multiling_docs]
+
+  multiling_tfidf = models.TfidfModel(bow_reps)
+  multiling_corpus_tfidf = multiling_tfidf[bow_reps]
+
+  for dimension in dimensions:
+      multi_lsi_model = models.LsiModel(multiling_corpus_tfidf, 
+                              id2word=dictionary, 
+                              num_topics=dimension)  
+          
+      french_vecs = []
+      for doc in fr_docs_test:
+          vec_bow = dictionary.doc2bow(doc)
+          bow_tfidf = multiling_tfidf[vec_bow]
+          vec_lsi = multi_lsi_model[bow_tfidf]  
+          vec_rep = np.asarray(list(zip(*vec_lsi))[1])
+          if vec_rep.shape[0]!= dimension:
+            french_vecs.append(np.zeros(dimension))
+          else:
+            french_vecs.append(vec_rep)
+
+      english_vecs = []
+      for doc in en_docs_test:
+          vec_bow = dictionary.doc2bow(doc)
+          bow_tfidf = multiling_tfidf[vec_bow]
+          vec_lsi = multi_lsi_model[bow_tfidf]  
+          vec_rep = np.asarray(list(zip(*vec_lsi))[1])
+          #This is here because of weird error, has to be fixed
+          if vec_rep.shape[0]!= dimension:
+              english_vecs.append(np.zeros(dimension))
+          else:
+              english_vecs.append(vec_rep)
+
+
+      score = evaluation_function(english_vecs, french_vecs)
+
+      scores.append(score)
+  return scores
+
+
+def tfidf(data,no_below=1,no_above=0.8):
+    '''
+    Input: (train,test) list of list of tokens
+    Output: (x_train,x_test) tfidf matrixes    
+    '''
+    train, test = data
+    dict = corpora.Dictionary(train)
+    dict.filter_extremes(no_below=no_below,no_above=no_above)
+    train_bow = [dict.doc2bow(doc) for doc in train]
+    test_bow  = [dict.doc2bow(doc) for doc in test]
+    tfidf =  models.TfidfModel(train_bow+test_bow)
+    x_train = tfidf[train_bow]
+    x_test = tfidf[test_bow]
+    return (x_train, x_test)
+
+def evaluate_improved_cllsi(x_train1_in,x_test1_in,x_train2_in,x_test2_in , dimensions, evaluation_function):
+    scores = []
+
+    for k in dimensions:
+      x_train1,x_test1 = tfidf(data = (x_train1_in,x_test1_in))
+      x_train2,x_test2 = tfidf(data = (x_train2_in,x_test2_in))
+
+      n_train, n_test = len(x_train1), len(x_test1)
+
+    
+      X1= matutils.corpus2csc(list(x_train1) +list( x_test1))
+      X2= matutils.corpus2csc(list(x_train2) + list(x_test2))
+
+      x_train1,x_train2 = X1[:,:n_train], X2[:, :n_train]
+      x_test1,x_test2 = X1[:,n_train:], X2[:,n_train:]
+      
+      print(x_train2.shape)
+      print(x_test2.shape)
+      x = sp.sparse.vstack([x_train1,x_train2])
+      x = matutils.Sparse2Corpus(x)
+
+      lsa = models.LsiModel(x,num_topics=k)
+      n = x_train1.shape[0]
+      U = lsa.projection.u
+      U1, U2 = U[:n,:], U[n:,:]
+      p1,p2 = sp.sparse.csr_matrix(np.linalg.pinv(U1)), sp.sparse.csr_matrix(np.linalg.pinv(U2))  
+      a1,a2 = np.dot(x_test1.T,p1.T).todense(), np.dot(x_test2.T,p2.T).todense()
+      print(a1.shape)
+      print(a2.shape)
+      score = evaluation_function(a1,a2)
+      scores.append(score)
     return scores
