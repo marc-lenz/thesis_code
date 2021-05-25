@@ -138,3 +138,45 @@ def plot_parameter_graph(dimensions, scores, title, xlabel = "Dimensions", ylabe
   plt.ylabel("Reciprocal Rank")
   plt.legend()
   plt.show()
+
+def compute_lcc_scores( en_train_matrix,
+                en_test_matrix,
+                fr_train_matrix,
+                fr_test_matrix,
+                dimensions, 
+                evaluation_function):
+
+    scores = []
+
+
+    for dimension in tqdm(dimensions):
+        en = en_train_matrix[: ,:dimension] - np.mean(en_train_matrix[:,:dimension], axis=0)
+        fr = fr_train_matrix[: ,:dimension] - np.mean(fr_train_matrix[:,:dimension], axis=0)
+        sample_size = en.shape[0]
+        zero_matrix = np.zeros((sample_size, dimension))
+        X1 = np.concatenate((en, zero_matrix), axis = 1)
+        X2 = np.concatenate((zero_matrix, fr), axis= 1)
+        X = np.concatenate((X1, X2), axis = 0)
+        Y1 = np.concatenate((en, fr), axis = 1)
+        Y2 = np.concatenate((en, fr), axis = 1)
+        Y = np.concatenate((Y1, Y2), axis = 0)
+
+        reg = linear_model.RidgeCV(alphas=[1e-10, 1e-3, 1e-2, 1e-1, 1, 10])
+        reg.fit(X,Y)
+        pca = PCA(n_components= int(dimension))
+        pca.fit(reg.predict(X))
+        rrr = lambda X: np.matmul(pca.transform(reg.predict(X)), pca.components_)
+
+        #sample_size = len(en_docs_test)
+        en = en_test_matrix[: ,:dimension] - np.mean(en_train_matrix[:,:dimension], axis=0)
+        fr = fr_test_matrix[: ,:dimension] - np.mean(en_train_matrix[:,:dimension], axis=0)
+        zero_matrix = np.zeros((en_test_matrix.shape[0], dimension))
+        X1 = np.concatenate((en, zero_matrix), axis = 1)
+        X2 = np.concatenate((zero_matrix, fr), axis= 1)
+        X = np.concatenate((X1, X2), axis = 0)
+        english_encodings_lcc = rrr(X1)
+        french_encodings_lcc = rrr(X2)
+        score = evaluation_function(english_encodings_lcc, french_encodings_lcc)
+        scores.append(score)
+
+    return scores
