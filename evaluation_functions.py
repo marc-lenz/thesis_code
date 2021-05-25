@@ -342,25 +342,98 @@ def evaluate_single_layer_lca_nn(l1_train, l1_test, l2_train, l2_test,
                 metrics= tf.keras.losses.CosineSimilarity())
 
 
-        hist1 = l1_to_l2_clf.fit(l1_train_matrix[: ,:dimension], 
-                          l2_train_matrix[:,:dimension], 
+        hist1 = l1_to_l2_clf.fit(l1_train[: ,:dimension], 
+                          l2_train[:,:dimension], 
                           epochs=max_epochs, 
-                          validation_data = (l1_test_matrix[: ,:dimension], l2_test_matrix[: ,:dimension]), 
+                          validation_data = (l1_test[: ,:dimension], l2_test[: ,:dimension]), 
                           callbacks=[callback])
 
-        hist2 = l2_to_l1_clf.fit(l2_train_matrix[: ,:dimension], 
-                          l1_train_matrix[: ,:dimension],
+        hist2 = l2_to_l1_clf.fit(l2_train[: ,:dimension], 
+                          l1_train[: ,:dimension],
                           epochs=max_epochs, 
-                          validation_data = (l2_test_matrix[: ,:dimension], l1_test_matrix[: ,:dimension]), 
+                          validation_data = (l2_test[: ,:dimension], l1_test[: ,:dimension]), 
                           callbacks=[callback])  
 
-        fake_fr = l1_to_l2_clf.predict(l1_test_matrix[: ,:dimension])
-        fake_en = l2_to_l1_clf.predict(l2_test_matrix[: ,:dimension])
+        fake_fr = l1_to_l2_clf.predict(l1_test[: ,:dimension])
+        fake_en = l2_to_l1_clf.predict(l2_test[: ,:dimension])
 
-        merged_trans_vecs = np.concatenate((fake_en, l2_test_matrix[:,:dimension]), axis = 1)
-        real_vecs = np.concatenate((l1_test_matrix[:,:dimension], fake_fr), axis = 1)
+        merged_trans_vecs = np.concatenate((fake_en, l2_test[:,:dimension]), axis = 1)
+        real_vecs = np.concatenate((l1_test[:,:dimension], fake_fr), axis = 1)
 
 
         score = evaluation_function(merged_trans_vecs, real_vecs)
         scores[idx, idy, idz] = score
+  return scores
+
+import tensorflow as tf
+from tensorflow.keras import Model
+
+def evaluate_lcnn(l1_train, l1_test, l2_train, l2_test, 
+                             evaluation_function = reciprocal_rank,
+                             dimensions = [ 20, 30] ,
+                             n_neurons = [200, 300],
+                             activation_functions = ["relu", None],
+                             max_epochs = 3,
+                             dropout = 0.2,
+                             optimizer = "adam") :
+
+  callback = tf.keras.callbacks.EarlyStopping(monitor='loss', patience=5)
+  l1_train, l1_test, l2_train, l2_test = np.asarray(l1_train), np.asarray(l1_test), np.asarray(l2_train), np.asarray(l2_test)
+
+
+  scores = np.zeros((len(n_neurons), len(activation_functions), len(dimensions)))
+
+  for idx, neurons in enumerate(n_neurons):
+    for idy, f in enumerate(activation_functions):
+      for idz, dimension in enumerate (dimensions):
+          print(dimension)
+
+
+          en = l1_train[:,:dimension] - np.mean(l1_train[:,:dimension], axis=0)
+          fr = l2_train[:,:dimension] - np.mean(l2_train[:,:dimension], axis=0)
+          zero_matrix = np.zeros((en.shape[0], dimension))
+          X1 = np.concatenate((en, zero_matrix), axis = 1)
+          X2 = np.concatenate((zero_matrix, fr), axis= 1)
+          X = np.concatenate((X1, X2), axis = 0)
+          Y1 = np.concatenate((en, fr), axis = 1)
+          Y2 = np.concatenate((en, fr), axis = 1)
+          Y = np.concatenate((Y1, Y2), axis = 0)
+
+
+          x = tf.keras.layers.Input(shape=(dimension*2,))
+          d1 = tf.keras.layers.Dropout(.2)(x)
+          h1 = tf.keras.layers.Dense(neurons*2, activation= "elu")(d1)
+          h2 = tf.keras.layers.Dense(int(neurons*1.5), activation= "elu")(h1)
+          emb = tf.keras.layers.Dense(neurons, activation= None)(h2)
+          h3 = tf.keras.layers.Dense(int(neurons*1.5), activation= "elu")(emb)
+          h4 = tf.keras.layers.Dense(neurons*2, activation= "elu")(h3)
+          d2 = tf.keras.layers.Dropout(.2)(h4)
+          y = tf.keras.layers.Dense(dimension*2, activation=None)(emb)
+          model = Model(x, y)
+          
+          model.compile(optimizer = optimizer,
+                        loss = tf.keras.losses.CosineSimilarity(),
+                        metrics=['MSE'])
+
+          history = model.fit(X, Y, epochs=max_epochs, validation_split=0.1, callbacks=[callback])
+
+
+  
+          en = l1_test[: ,:dimension] - np.mean(l1_train[:,:dimension], axis=0)
+          fr = l2_test[: ,:dimension] - np.mean(l1_train[:,:dimension], axis=0)
+          zero_matrix = np.zeros((l1_test.shape[0], dimension))
+
+          X1 = np.concatenate((en, zero_matrix), axis = 1)
+          X2 = np.concatenate((zero_matrix, fr), axis= 1)
+          X = np.concatenate((X1, X2), axis = 0)
+          
+          encoder = Model(x, emb)
+          english_encodings_nncc = encoder.predict(X1)
+          french_encodings_nncc = encoder.predict(X2)
+
+          score = evaluation_function(english_encodings_nncc, french_encodings_nncc)
+
+
+          scores[idx, idy, idz] = score
+
   return scores
