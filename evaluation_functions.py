@@ -115,11 +115,14 @@ def evaluate_baseline_lca_model(X_train_in, X_test_in, Y_train_in, Y_test_in, di
   return scores 
 
 
-def plot_parameter_graph(dimensions, scores, title, xlabel = "Dimensions", ylabel = "Reciprocal Rank"):
+def plot_parameter_graph(dimensions, scores, title, xlabel = "Dimensions", ylabel = "Reciprocal Rank", pair_list=None):
   figure(figsize=(18, 6))
 
   for k, score in enumerate(scores):
-    plt.plot(dimensions, scores[k], alpha=0.8, label="Language Pair: {} -> {}".format(pair_list[k][0], pair_list[k][1]))
+    if pair_list == None:
+        plt.plot(dimensions, scores[k], alpha=0.8, label="Language Pair: {}".format(k))
+    else:
+        plt.plot(dimensions, scores[k], alpha=0.8, label="Language Pair: {} -> {}".format(pair_list[k][0], pair_list[k][1]))
   avg = np.mean(np.asarray(scores), axis=0)
   plt.plot(dimensions, avg, c="r", label="Average Score",linewidth=3.0)
 
