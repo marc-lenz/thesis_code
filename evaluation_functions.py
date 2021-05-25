@@ -23,6 +23,9 @@ from thesis_code.Utils import create_corpus, read_docs, mate_retrieval_score
 
 import pickle
 
+import tensorflow as tf
+from tensorflow.keras import Model
+from tensorflow.keras import regularizers
 
 
 def mate_retrieval(l1_vecs, l2_vecs):
@@ -280,8 +283,7 @@ def evaluate_improved_cllsi(x_train1_in,x_test1_in,x_train2_in,x_test2_in , dime
       x_train1,x_train2 = X1[:,:n_train], X2[:, :n_train]
       x_test1,x_test2 = X1[:,n_train:], X2[:,n_train:]
       
-      print(x_train2.shape)
-      print(x_test2.shape)
+
       x = sp.sparse.vstack([x_train1,x_train2])
       x = matutils.Sparse2Corpus(x)
 
@@ -291,8 +293,74 @@ def evaluate_improved_cllsi(x_train1_in,x_test1_in,x_train2_in,x_test2_in , dime
       U1, U2 = U[:n,:], U[n:,:]
       p1,p2 = sp.sparse.csr_matrix(np.linalg.pinv(U1)), sp.sparse.csr_matrix(np.linalg.pinv(U2))  
       a1,a2 = np.dot(x_test1.T,p1.T).todense(), np.dot(x_test2.T,p2.T).todense()
-      print(a1.shape)
-      print(a2.shape)
+
       score = evaluation_function(a1,a2)
       scores.append(score)
     return scores
+
+
+
+
+def evaluate_single_layer_lca_nn(l1_train, l1_test, l2_train, l2_test, 
+                             evaluation_function = reciprocal_rank,
+                             dimensions = [ 20, 30] ,
+                             n_neurons = [200, 300],
+                             activation_functions = ["relu", None],
+                             max_epochs = 20,
+                             dropout = True,
+                             optimizer = "adam"
+                             ):
+  callback = tf.keras.callbacks.EarlyStopping(monitor='loss', patience=5)
+  scores = np.zeros((len(n_neurons), len(activation_functions), len(dimensions)))
+
+  for idx, neurons in enumerate(n_neurons):
+    for idy, f in enumerate(activation_functions):
+      for idz, dimension in enumerate (dimensions):
+
+        x = tf.keras.layers.Input(shape=(dimension,))
+        d1 = tf.keras.layers.Dropout(.2)(x)
+        if dropout == True:
+          h1 = tf.keras.layers.Dense(neurons, activation= f, kernel_regularizer=regularizers.l2(l2=1e-7))(d1) 
+        else:
+          h1 = tf.keras.layers.Dense(neurons, activation= f, kernel_regularizer=regularizers.l2(l2=1e-7))(x) 
+        d2 = tf.keras.layers.Dropout(.2)(h1)
+        if dropout == True:
+          y = tf.keras.layers.Dense(dimension, activation=None)(d2)
+        else:
+          y = tf.keras.layers.Dense(dimension, activation=None)(h1)
+
+        l1_to_l2_clf = Model(x, y)
+        l2_to_l1_clf = Model(x, y)
+
+        l1_to_l2_clf.compile(optimizer = optimizer,
+                loss = ['MSE'],
+                metrics= tf.keras.losses.CosineSimilarity()
+                )
+
+        l2_to_l1_clf.compile(optimizer = optimizer,
+                loss = ['MSE'],
+                metrics= tf.keras.losses.CosineSimilarity())
+
+
+        hist1 = l1_to_l2_clf.fit(l1_train_matrix[: ,:dimension], 
+                          l2_train_matrix[:,:dimension], 
+                          epochs=max_epochs, 
+                          validation_data = (l1_test_matrix[: ,:dimension], l2_test_matrix[: ,:dimension]), 
+                          callbacks=[callback])
+
+        hist2 = l2_to_l1_clf.fit(l2_train_matrix[: ,:dimension], 
+                          l1_train_matrix[: ,:dimension],
+                          epochs=max_epochs, 
+                          validation_data = (l2_test_matrix[: ,:dimension], l1_test_matrix[: ,:dimension]), 
+                          callbacks=[callback])  
+
+        fake_fr = l1_to_l2_clf.predict(l1_test_matrix[: ,:dimension])
+        fake_en = l2_to_l1_clf.predict(l2_test_matrix[: ,:dimension])
+
+        merged_trans_vecs = np.concatenate((fake_en, l2_test_matrix[:,:dimension]), axis = 1)
+        real_vecs = np.concatenate((l1_test_matrix[:,:dimension], fake_fr), axis = 1)
+
+
+        score = evaluation_function(merged_trans_vecs, real_vecs)
+        scores[idx, idy, idz] = score
+  return scores
