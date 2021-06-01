@@ -178,7 +178,7 @@ def evaluate_lcc_model( en_train_matrix,
 
         #sample_size = len(en_docs_test)
         en = en_test_matrix[: ,:dimension] - np.mean(en_train_matrix[:,:dimension], axis=0)
-        fr = fr_test_matrix[: ,:dimension] - np.mean(en_train_matrix[:,:dimension], axis=0)
+        fr = fr_test_matrix[: ,:dimension] - np.mean(fr_train_matrix[:,:dimension], axis=0)
         zero_matrix = np.zeros((en_test_matrix.shape[0], dimension))
         X1 = np.concatenate((en, zero_matrix), axis = 1)
         X2 = np.concatenate((zero_matrix, fr), axis= 1)
