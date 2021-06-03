@@ -302,7 +302,7 @@ def evaluate_improved_cllsi(x_train1_in,x_test1_in,x_train2_in,x_test2_in , dime
 
 
 
-def evaluate_nncc(l1_train, l1_test, l2_train, l2_test, 
+def evaluate_nnca(l1_train, l1_test, l2_train, l2_test, 
                   dimensions,
                   evaluation_function = reciprocal_rank,
                   neurons = [100],
