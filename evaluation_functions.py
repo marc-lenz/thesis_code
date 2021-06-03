@@ -125,7 +125,7 @@ def evaluate_baseline_lca_model(X_train_in, X_test_in, Y_train_in, Y_test_in, di
 
 
 def plot_parameter_graph(dimensions, scores, title, xlabel = "Dimensions", ylabel = "Reciprocal Rank", pair_list=None):
-  figure(figsize=(18, 6))
+  figure(figsize=(9, 6))
 
   for k, score in enumerate(scores):
     if pair_list == None:
@@ -138,13 +138,14 @@ def plot_parameter_graph(dimensions, scores, title, xlabel = "Dimensions", ylabe
   max_ind = np.argmax(avg)
 
   plt.scatter(dimensions[max_ind], avg[max_ind], c="k")
-  plt.text(dimensions[max_ind], avg[max_ind]-0.1, 
+  plt.text(dimensions[max_ind]+0.005, avg[max_ind]+0.005, 
           "Dimension: {} \nMean Score: {}".format(dimensions[max_ind],str(avg[max_ind])[:4] ),
           fontsize= 12
               )
   plt.title(title, fontsize=13)
   plt.xlabel("Dimensions")
   plt.ylabel("Reciprocal Rank")
+  plt.ylim(0.85,1)
   plt.legend()
   plt.show()
 
@@ -369,71 +370,75 @@ import tensorflow as tf
 from tensorflow.keras import Model
 
 def evaluate_lcnn(l1_train, l1_test, l2_train, l2_test, 
+                             dimensions ,
                              evaluation_function = reciprocal_rank,
-                             dimensions = [ 20, 30] ,
-                             n_neurons = [200, 300],
-                             activation_functions = ["relu", None],
-                             max_epochs = 3,
+                             neurons = [100],
+                             activation_function = "relu",
+                             max_epochs = 100,
                              dropout = 0.2,
-                             optimizer = "adam") :
+                             optimizer = "adam",
+                             loss = "MSE") :
 
   callback = tf.keras.callbacks.EarlyStopping(monitor='loss', patience=5)
   l1_train, l1_test, l2_train, l2_test = np.asarray(l1_train), np.asarray(l1_test), np.asarray(l2_train), np.asarray(l2_test)
 
 
-  scores = np.zeros((len(n_neurons), len(activation_functions), len(dimensions)))
-
-  for idx, neurons in enumerate(n_neurons):
-    for idy, f in enumerate(activation_functions):
-      for idz, dimension in enumerate (dimensions):
-          print(dimension)
+  scores = []
 
 
-          en = l1_train[:,:dimension] - np.mean(l1_train[:,:dimension], axis=0)
-          fr = l2_train[:,:dimension] - np.mean(l2_train[:,:dimension], axis=0)
-          zero_matrix = np.zeros((en.shape[0], dimension))
-          X1 = np.concatenate((en, zero_matrix), axis = 1)
-          X2 = np.concatenate((zero_matrix, fr), axis= 1)
-          X = np.concatenate((X1, X2), axis = 0)
-          Y1 = np.concatenate((en, fr), axis = 1)
-          Y2 = np.concatenate((en, fr), axis = 1)
-          Y = np.concatenate((Y1, Y2), axis = 0)
+  for idz, dimension in enumerate (dimensions):
+      en = l1_train[:,:dimension] - np.mean(l1_train[:,:dimension], axis=0)
+      fr = l2_train[:,:dimension] - np.mean(l2_train[:,:dimension], axis=0)
+      zero_matrix = np.zeros((en.shape[0], dimension))
+      X1 = np.concatenate((en, zero_matrix), axis = 1)
+      X2 = np.concatenate((zero_matrix, fr), axis= 1)
+      X = np.concatenate((X1, X2), axis = 0)
+      Y1 = np.concatenate((en, fr), axis = 1)
+      Y2 = np.concatenate((en, fr), axis = 1)
+      Y = np.concatenate((Y1, Y2), axis = 0)
+
+      if len(neurons) == 1:
+        x = tf.keras.layers.Input(shape=(dimension*2,))
+        d1 = tf.keras.layers.Dropout(dropout)(x)
+        emb = tf.keras.layers.Dense(neurons[0], activation = activation_function)(d1)
+        d2 = tf.keras.layers.Dropout(dropout)(emb)
+        y = tf.keras.layers.Dense(dimension*2, activation = activation_function)(d2)
+        model = Model(x, y)
+      elif len(neurons) == 3:
+        x = tf.keras.layers.Input(shape=(dimension*2,))
+        d1 = tf.keras.layers.Dropout(dropout)(x)
+        h1 = tf.keras.layers.Dense(neurons[0], activation = activation_function)(d1)
+        emb = tf.keras.layers.Dense(neurons[1], activation = activation_function)(h1)
+        h2 = tf.keras.layers.Dense(neurons[2], activation = activation_function)(emb)
+        d2 = tf.keras.layers.Dropout(dropout)(h2)
+        y = tf.keras.layers.Dense(dimension*2, activation=None)(d2)
+        model = Model(x, y)
+
+      if loss == "cosine_sim":
+        loss = tf.keras.losses.CosineSimilarity()
+      model.compile(optimizer = optimizer,
+                    loss =  loss, #"MSE",#tf.keras.losses.CosineSimilarity(),
+                    metrics=[tf.keras.losses.CosineSimilarity()])
+
+      history = model.fit(X, Y, epochs=max_epochs, validation_split=0.1, callbacks=[callback])
 
 
-          x = tf.keras.layers.Input(shape=(dimension*2,))
-          d1 = tf.keras.layers.Dropout(.2)(x)
-          h1 = tf.keras.layers.Dense(neurons*2, activation= "elu")(d1)
-          h2 = tf.keras.layers.Dense(int(neurons*1.5), activation= "elu")(h1)
-          emb = tf.keras.layers.Dense(neurons, activation= None)(h2)
-          h3 = tf.keras.layers.Dense(int(neurons*1.5), activation= "elu")(emb)
-          h4 = tf.keras.layers.Dense(neurons*2, activation= "elu")(h3)
-          d2 = tf.keras.layers.Dropout(.2)(h4)
-          y = tf.keras.layers.Dense(dimension*2, activation=None)(emb)
-          model = Model(x, y)
-          
-          model.compile(optimizer = optimizer,
-                        loss = tf.keras.losses.CosineSimilarity(),
-                        metrics=['MSE'])
 
-          history = model.fit(X, Y, epochs=max_epochs, validation_split=0.1, callbacks=[callback])
+      en = l1_test[: ,:dimension] - np.mean(l1_train[:,:dimension], axis=0)
+      fr = l2_test[: ,:dimension] - np.mean(l1_train[:,:dimension], axis=0)
+      zero_matrix = np.zeros((l1_test.shape[0], dimension))
+
+      X1 = np.concatenate((en, zero_matrix), axis = 1)
+      X2 = np.concatenate((zero_matrix, fr), axis= 1)
+      X = np.concatenate((X1, X2), axis = 0)
+      
+      encoder = Model(x, emb)
+      english_encodings_nncc = encoder.predict(X1)
+      french_encodings_nncc = encoder.predict(X2)
+
+      score = evaluation_function(english_encodings_nncc, french_encodings_nncc)
 
 
-  
-          en = l1_test[: ,:dimension] - np.mean(l1_train[:,:dimension], axis=0)
-          fr = l2_test[: ,:dimension] - np.mean(l1_train[:,:dimension], axis=0)
-          zero_matrix = np.zeros((l1_test.shape[0], dimension))
-
-          X1 = np.concatenate((en, zero_matrix), axis = 1)
-          X2 = np.concatenate((zero_matrix, fr), axis= 1)
-          X = np.concatenate((X1, X2), axis = 0)
-          
-          encoder = Model(x, emb)
-          english_encodings_nncc = encoder.predict(X1)
-          french_encodings_nncc = encoder.predict(X2)
-
-          score = evaluation_function(english_encodings_nncc, french_encodings_nncc)
-
-
-          scores[idx, idy, idz] = score
+      scores.append(score)
 
   return scores
