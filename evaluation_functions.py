@@ -372,7 +372,7 @@ def evaluate_nnca(l1_train, l1_test, l2_train, l2_test,
 
     score = evaluation_function(merged_trans_vecs, real_vecs)
     scores.append(score)
-  return scores
+  return scores, hist1, hist2
 
 
 import tensorflow as tf
@@ -450,4 +450,4 @@ def evaluate_nncc(l1_train, l1_test, l2_train, l2_test,
 
       scores.append(score)
 
-  return scores
+  return scores, history
